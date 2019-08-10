@@ -1,4 +1,4 @@
-//#include "driver.h"
+#include "driver.h"
 
 #include <linux/init.h>   // module_init, module_exit
 #include <linux/module.h> // version info, MODULE_LICENSE, MODULE_AUTHOR, printk()
@@ -13,16 +13,12 @@ MODULE_DESCRIPTION("USB Drawing Pad Driver");
 
 
 
-//IDs for the Huion H640P drawing tablet
-#define HUION_H640P_VENDOR_ID = 0x256c;
-#define HUION_H640P_PRODUCT_ID = 0x006d;
-
 
 // Table of devices that work with this driver
 // Enables the linux-hotplug system to load driver automatically upon device plug-in
 static struct usb_device_id drawpad_table [] =
 {
-    { USB_DEVICE(HUION_H640P_VENDOR_ID, HUION_H640P_PRODUCT_ID) },
+    { USB_DEVICE(0x256c, 0x006d) }, //Huion H640P Drawing Tablet
     { } //Terminating entry
 };
 MODULE_DEVICE_TABLE (usb, drawpad_table);
@@ -45,8 +41,7 @@ static struct usb_driver drawpad_driver = {
 
 
 
-
-//Called when a device registered in the above 'device_table' table is plugged in
+//Called when a device registered in the above 'drawpad_table' table is plugged in
 static int drawpad_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
     printk(KERN_INFO "Device (%04X:%04X) plugged\n",
@@ -54,6 +49,7 @@ static int drawpad_probe(struct usb_interface *interface, const struct usb_devic
     return 0;
 }
 
+//Called when device is disconnected or driver module is being unloaded
 static void drawpad_disconnect(struct usb_interface *interface)
 {
     printk(KERN_INFO "Device removed\n");
@@ -70,12 +66,11 @@ static int __init usb_drawpad_init(void)
         printk( KERN_NOTICE "Huion-driver: Initialization started" );
 
         //Register this driver with the USB subsystem
-        result = usb_register(&skel_driver);
+        result = usb_register(&drawpad_driver);
 
         //If registration failed
         if (result < 0) {
-                err("usb_register failed for the driver."
-                    "Error number %d", result);
+            printk( KERN_NOTICE "USB_register failed for the driver.\nError number %d", result);
                 return -1;
         }
 
@@ -87,7 +82,7 @@ static void __exit usb_drawpad_exit(void)
 {
         printk( KERN_NOTICE "Huion-driver: Exiting" );
         /* deregister this driver with the USB subsystem */
-        usb_deregister(&skel_driver);
+        usb_deregister(&drawpad_driver);
 }
 
 

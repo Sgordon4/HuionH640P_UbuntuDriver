@@ -1,0 +1,1 @@
+cmd_/home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/driver.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/driver.ko /home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/driver.o /home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/driver.mod.o ;  true
