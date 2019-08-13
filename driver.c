@@ -11,6 +11,12 @@ MODULE_DESCRIPTION("USB Drawing Pad Driver");
 
 
 
+/*
+When reporting values of keys/axes, use input_report_key(),
+input_report_rel(), use abs instead of rel, etc...
+Use the values in
+usr/src/linux-headers-4.15.0-55/include/uapi/linux/input-event-codes.h
+*/
 
 
 
