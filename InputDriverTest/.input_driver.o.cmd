@@ -848,6 +848,19 @@ deps_/home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/InputDriverTest/inpu
     $(wildcard include/config/pci/domains.h) \
   include/linux/pm_wakeup.h \
   include/linux/mod_devicetable.h \
+  include/linux/usb.h \
+    $(wildcard include/config/usb/mon.h) \
+    $(wildcard include/config/usb/led/trig.h) \
+  include/linux/usb/ch9.h \
+  include/uapi/linux/usb/ch9.h \
+    $(wildcard include/config/size.h) \
+    $(wildcard include/config/att/one.h) \
+    $(wildcard include/config/att/selfpower.h) \
+    $(wildcard include/config/att/wakeup.h) \
+    $(wildcard include/config/att/battery.h) \
+  include/linux/delay.h \
+  arch/x86/include/asm/delay.h \
+  include/asm-generic/delay.h \
   include/linux/interrupt.h \
     $(wildcard include/config/irq/forced/threading.h) \
     $(wildcard include/config/generic/irq/probe.h) \
@@ -868,6 +881,7 @@ deps_/home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/InputDriverTest/inpu
   arch/x86/include/asm/sections.h \
   include/asm-generic/sections.h \
   arch/x86/include/asm/extable.h \
+  include/linux/pm_runtime.h \
 
 /home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/InputDriverTest/input_driver.o: $(deps_/home/sean/Programming/Drivers/HuionH640P_UbuntuDriver/InputDriverTest/input_driver.o)
 
