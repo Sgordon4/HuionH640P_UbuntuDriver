@@ -4,7 +4,7 @@
 #include <linux/input.h>
 #include <linux/usb.h>
 
-#include <liux/libusb.h>
+#include <libusb-1.0/libusb.h>
 
 //#include <linux/irq.h>
 #include <linux/interrupt.h>
