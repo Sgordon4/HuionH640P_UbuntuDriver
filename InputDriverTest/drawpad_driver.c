@@ -188,7 +188,7 @@ static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device
     //Assign the passed interface as the input_dev parent
     input_dev->dev.parent = &intf->dev;
 
-    
+
     input_set_drvdata(input_dev, drawpad);
 
     input_dev->open = usb_drawpad_open;
@@ -239,6 +239,8 @@ failDMA:
 failALLOC:
     input_free_device(input_dev);
     kfree(drawpad);
+
+    printk(KERN_ERROR "There was an error in drawpad_driver probe!")
 
     return error;
 }
