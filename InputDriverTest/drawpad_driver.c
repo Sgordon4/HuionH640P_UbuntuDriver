@@ -1,30 +1,24 @@
-// #include <linux/init.h>
-#include <linux/module.h>
-// #include <linux/kernel.h>
-// #include <linux/input.h>
-// #include <linux/usb.h>
-// #include <linux/interrupt.h>
-// #include <libusb-1.0/libusb.h>
-
 #include <linux/kernel.h>
-#include <linux/slab.h>
-//#include <linux/module.h>
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/usb/input.h>
 #include <linux/hid.h>
+#include <linux/slab.h>
+
+#include <linux/poll.h>
+#include <linux/interrupt.h>
+#include <linux/miscdevice.h>
+// #include <linunx/ioport.h>
+
+#include <linux/io.h>
+
+
 
 MODULE_AUTHOR("Sean Gordon <SeanGordonkh@gmail.com>");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("Simple input device driver designed for the "
                    "Huion H640P drawing tablet");
 
-//To register a device with a driver, register the device with the
-//Kernel with a major device number using register_chrdev, and
-//register the driver with the same major number
-
-
-//Work referencing
-//https://elixir.bootlin.com/linux/latest/source/drivers/hid/usbhid/usbmouse.c
 
 
 
@@ -42,260 +36,198 @@ struct usb_drawpad{
 };
 
 
-static void usb_drawpad_irq(struct urb *urb)
+
+
+//TODO
+static ssize_t read_drawpad(struct file *filp, char *buffer, size_t count, loff_t *ppos)
 {
-    printk(KERN_ALERT "--------------------------------");
-    printk(KERN_ALERT "Interrupt Handler Called");
-    printk(KERN_ALERT "--------------------------------");
+    return -EINVAL;
+}
+
+//Can't really write to a drawpad
+static ssize_t write_drawpad(struct file *filp, const char *buffer, size_t count, loff_t *ppos)
+{
+    return -EINVAL;
 }
 
 
-static int usb_drawpad_open(struct input_dev *dev)
+
+static int drawpad_users = 0;       //# of current users
+static int drawpad_dx = 0;          //X axis position
+static int drawpad_dy = 0;          //Y axis position
+static int drawpad_event = 0;       //'Something has happened'
+
+static struct wait_queue_head *drawpad_wait;
+//static spinlock_t drawpad_lock;
+//DEFINE_SPINLOCK(drawpad_lock);
+
+
+//TODO
+static unsigned int poll_drawpad(struct file *filp, poll_table *wait)
 {
-	struct usb_drawpad *drawpad = input_get_drvdata(dev);
+    poll_wait(filp, drawpad_wait, wait);
 
-	drawpad->irq->dev = drawpad->usbdev;
-	if (usb_submit_urb(drawpad->irq, GFP_KERNEL))
-		return -EIO;
-
-	return 0;
+    if(drawpad_event)
+        return POLLIN | POLLRDNORM;
+    return 0;
 }
 
-static void usb_drawpad_close(struct input_dev *dev)
+//TODO
+/*
+static irq_handler drawpad_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
-	struct usb_drawpad *drawpad = input_get_drvdata(dev);
-
-	usb_kill_urb(drawpad->irq);
+    printk(KERN_ALERT "Interrupted!");
+    return 0;
+}
+*/
+static irqreturn_t drawpad_interrupt(int irq, void *dummy)
+{
+    printk(KERN_ALERT "Interrupt called!\n");
+    return IRQ_HANDLED;
 }
 
 
-/* Called when a device listed in this driver's registered ID table
- * is plugged in.
- * Taking the passed interface, ensure there is an interrupt endpoint,
- * and that it is an incoming line.
- * Then, allocate the necessary size of this structure in the kernel,
- * and assign all irq and urb related information necessary.
- * Compile the name for the device, and grab the physical path
- * to the device.
- * Finally, set what each bit does and link functions.
- */
-static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device_id *id)
+
+//Find this programmatically later
+int DRAWPAD_IRQ = 8;
+
+static int open_drawpad(struct inode *inode, struct file *file)
 {
-    printk(KERN_ALERT "--------------------------------");
-    printk(KERN_ALERT "Drawpad probe called");
-    printk(KERN_ALERT "Device (%04X:%04X) plugged\n", id->idVendor, id->idProduct);
-    printk(KERN_ALERT "--------------------------------");
+    //Does two things:
+    //Checks if drawpad_users is not initially 0 (first user)
+    //Increments the active user count
+    if(drawpad_users++)
+        return 0;
 
+    //If this is the first user...
+    if(request_irq(DRAWPAD_IRQ, drawpad_interrupt, 0, "Huion drawpad", NULL))
+    {
+        //If the request failed
+        drawpad_users--;
+        return -EBUSY;
+    }
 
-    struct usb_device *usb_dev = interface_to_usbdev(intf);
-
-	struct usb_host_interface *host_interface;
-	struct usb_endpoint_descriptor *endpoint;
-
-	struct usb_drawpad *drawpad;
-	struct input_dev *input_dev;
-
-	int pipe, maxp;
-	int error = -ENOMEM;
-
-
-
-    //Grab the current settings from the passed interface
-    host_interface = intf->cur_altsetting;
-
-    //If there is no interrupt endpoint...
-    if(host_interface->desc.bNumEndpoints != 1)
-        return -ENODEV;     //There is no device we care about
-
-    //Grab the endpoint
-    endpoint = &host_interface->endpoint[0].desc;
-    //If the endpoint is not an incoming line
-    if(!usb_endpoint_is_int_in(endpoint))
-        return -ENODEV;     //There is no device we care about
-
-
-    //Grab the IN endpoint for the device. Transfer buffer
-    pipe = usb_rcvintpipe(usb_dev, endpoint->bEndpointAddress);
-    //A ten minute search yielded no results. I have no literal
-    //definition for this function. I can only assume it represents
-    //the maximum packet size the device supports.
-    //Length of the transfer buffer
-    maxp = usb_maxpacket(usb_dev, pipe, usb_pipeout(pipe));
-
-
-
-    /*----------------------- Allocation ----------------------*/
-    //Allocate enough space for the drawpad struct in kernel memory
-    drawpad = kzalloc(sizeof(struct usb_drawpad), GFP_KERNEL);
-    input_dev = input_allocate_device();
-
-    //If either allocation failed...
-    if(!drawpad || !input_dev)
-        goto failALLOC;
-
-
-    //Allocate a DMA-consistent buffer
-    drawpad->data = usb_alloc_coherent(usb_dev, 8, GFP_ATOMIC, &drawpad->data_dma);
-    if(!drawpad->data)
-        goto failDMA;
-
-
-    //Create a new urb for the driver to use
-    drawpad->irq = usb_alloc_urb(0, GFP_KERNEL);
-    if(!drawpad->irq)
-        goto failIRQ;
-
-
-    //Get the physial path for the drawpad
-    usb_make_path(usb_dev, drawpad->phys, sizeof(drawpad->phys));
-    strlcat(drawpad->phys, "/input0", sizeof(drawpad->phys));
-
-    //Add new info to struct
-    drawpad->usbdev = usb_dev;
-    drawpad->dev    = input_dev;
-
-
-
-    /*-------------------------- Name --------------------------*/
-    //Create a name for the device
-    if (usb_dev->manufacturer)
-		strlcpy(drawpad->name, usb_dev->manufacturer, sizeof(drawpad->name));
-
-	if (usb_dev->product) {
-		if (usb_dev->manufacturer)
-			strlcat(drawpad->name, " ", sizeof(drawpad->name));
-		strlcat(drawpad->name, usb_dev->product, sizeof(drawpad->name));
-	}
-
-    if (!strlen(drawpad->name))
-		snprintf(drawpad->name, sizeof(drawpad->name),
-			"USB HIDBP Drawpad %04x:%04x",
-			le16_to_cpu(usb_dev->descriptor.idVendor),
-			le16_to_cpu(usb_dev->descriptor.idProduct));
-
-
-
-
-    /*----------------------- Final Info -----------------------*/
-
-    //Copy the information from our drawpad struct to our temp input_dev struct
-    input_dev->name = drawpad->name;
-    input_dev->phys = drawpad->phys;
-
-    //Get the id for the usb device
-    usb_to_input_id(usb_dev, &input_dev->id);
-
-    //Assign the passed interface as the input_dev parent
-    input_dev->dev.parent = &intf->dev;
-
-
-    input_set_drvdata(input_dev, drawpad);
-
-    input_dev->open = usb_drawpad_open;
-    input_dev->close = usb_drawpad_close;
-
-
-    /*----------------------- Bit Assign -----------------------*/
-
-
-
-
-
-    /*---------------------- Registration ----------------------*/
-
-
-
-
-    //Initialize an interrupt urb
-    usb_fill_int_urb(drawpad->irq, usb_dev, pipe, drawpad->data,
-                     (maxp > 8 ? 8 : maxp), usb_drawpad_irq,
-                     drawpad, endpoint->bInterval
-                    );
-
-
-
-    drawpad->irq->transfer_dma = drawpad->data_dma;
-    drawpad->irq->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-
-
-    //Finally register the device
-    error = input_register_device(drawpad->dev);
-    if(error)
-        goto failRegister;
-
-    //Save a pointer to the driver specific structure 'drawpad'
-    //Can be retrieved later using usb_get_intfdata()
-    usb_set_intfdata(intf, drawpad);
+    drawpad_dx = 0;
+    drawpad_dy = 0;
+    drawpad_event = 0;
+    //drawpad_buttons = 0;
 
     return 0;
-
-
-
-failRegister:
-    usb_free_urb(drawpad->irq);
-failIRQ:
-    usb_free_coherent(usb_dev, 8, drawpad->data, drawpad->data_dma);
-failDMA:
-failALLOC:
-    input_free_device(input_dev);
-    kfree(drawpad);
-
-    printk(KERN_ERROR "There was an error in drawpad_driver probe!")
-
-    return error;
 }
 
 
-
-
-
-
-
-static void usb_drawpad_disconnect(struct usb_interface *intf)
+static int close_drawpad(struct inode *inode, struct file *file)
 {
-    printk(KERN_ALERT "--------------------------------");
-    printk(KERN_ALERT "USB Drawpad Disconnected!");
-    printk(KERN_ALERT "--------------------------------");
+    //Does two things:
+    //Decrements the active user count
+    //Checks if that wasn't the last user
+    if(--drawpad_users)
+        return 0;
+
+    //If that was the last user...
+    free_irq(DRAWPAD_IRQ, NULL);
+
+    return 0;
 }
 
 
 
 
-static const struct usb_device_id usb_drawpad_id_table[] = {
-    {USB_DEVICE(0x256c, 0x006d)},   //Huion H640P drawpad
-	{ }	/* Terminating entry */
+
+struct file_operations drawpad_fops = {
+    .owner      = THIS_MODULE,
+    //.seek     =
+    .read       = read_drawpad,
+    .write      = write_drawpad,
+    //.readdir  =
+    .poll       = poll_drawpad,
+    //.ioctl    =
+    //mmap      =
+    .open       = open_drawpad,
+    //.flush    =
+    .release    = close_drawpad,
+    //.fsync    =
+    //.fasync   =
+    //.lock     =
 };
 
-MODULE_DEVICE_TABLE (usb, usb_drawpad_id_table);
 
-static struct usb_driver usb_drawpad_driver = {
-	.name		= "usbdrawpad",
-	.probe		= usb_drawpad_probe,
-	.disconnect	= usb_drawpad_disconnect,
-	.id_table	= usb_drawpad_id_table,
+#define DRAWPAD_START   0x81
+#define DRAWPAD_END     0x82
+
+static struct miscdevice drawpad_misc = {
+    .minor      = MISC_DYNAMIC_MINOR,
+    .name       = "drawpad",
+    .fops       = &drawpad_fops,
 };
+
+
+
+
+
+static int __init drawpad_init(void)
+{
+    printk(KERN_ALERT "\nInitializing drawpad driver!\n");
+
+
+    //Claim our drawpad's IO ports
+    if(request_region(DRAWPAD_START, 2, "drawpad") == NULL) {
+        printk(KERN_ERR "Drawpad request_region failed.\n");
+        return -ENODEV;
+    }
+
+    //Register this driver
+    if (misc_register(&drawpad_misc) < 0){
+        printk(KERN_ERR "Cannot register device!\n");
+        release_region(DRAWPAD_START, 2);
+        return -EBUSY;
+    }
+
+    return 0;
+}
+static void __exit drawpad_exit(void)
+{
+    misc_deregister(&drawpad_misc);
+    release_region(DRAWPAD_START, 2);
+}
+module_init(drawpad_init);
+module_exit(drawpad_exit);
+
+
+
+
+
 
 
 
 
 
 /*
- * Module init/exit are replaced with the below module_usb_driver() macro, as
- * there's nothing really special going on in them.
-static int __init drawpad_init(void){}
-static void __exit drawpad_exit(void){}
-
-module_init(drawpad_init);
-module_exit(drawpad_exit);
-*/
-
-
-/**
- * module_usb_driver() - Helper macro for registering a USB driver
- * @__usb_driver: usb_driver struct
- *
- * Helper macro for USB drivers which do not do anything special in module
- * init/exit. This eliminates a lot of boilerplate. Each module may only
- * use this macro once, and calling it replaces module_init() and module_exit()
+ * Module init/exit can be replaced with the below module_usb_driver() macro,
+ * as there's nothing really special going on in them.
  */
-module_usb_driver(usb_drawpad_driver);
+// static int __init drawpad_init(void)
+// {
+//     int result;
+//
+//     //Register this driver with the usb subsystem
+//     result = usb_register(&usb_drawpad_driver);
+//     if(result)
+//         printk(KERN_ERR "USB register failed with error number %d", result);
+//
+//     return result;
+// }
+// static void __exit drawpad_exit(void)
+// {
+//     //Deregister this driver with the usb subsystem
+//     usb_deregister(&usb_drawpad_driver);
+// }
+//
+// module_init(drawpad_init);
+// module_exit(drawpad_exit);
+
+
+
+
+// module_usb_driver() - Helper macro for registering a USB driver
+//module_usb_driver(drawpad_fops);
