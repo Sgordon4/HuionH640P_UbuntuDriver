@@ -64,24 +64,43 @@ static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device
     printk(KERN_INFO "input_driver probed!\n");
     printk(KERN_INFO "----------------------\n");
 
-	//return 0;
-    /*
+	///*
+    
 	struct usb_device *dev = interface_to_usbdev(intf);
 	struct usb_host_interface *interface;
 	struct usb_endpoint_descriptor *endpoint;
+
 	struct usb_drawpad *drawpad;
 	struct input_dev *input_dev;
+
 	int pipe, maxp;
 	int error = -ENOMEM;
 
+	//Grab the main interface we designed earlier
 	interface = intf->cur_altsetting;
 
-	if (interface->desc.bNumEndpoints != 1)
+	//Check for correct number of endpoints -----------------------------------
+	//This drawpad initially connects as 0416:3f00 with 2 endpoints, then
+	//disconnects and reconnects twice as 256c:006d, both with 1 endpoint
+	//Assuming for the moment these are the pen vs the drawpad buttons.
+
+	printk(KERN_INFO "We got these many endpoints: %d\n", interface->desc.bNumEndpoints);
+
+	if (interface->desc.bNumEndpoints != 1){
+		printk(KERN_INFO "Yo chief, we got a problem\n");
 		return -ENODEV;
+	}
 
 	endpoint = &interface->endpoint[0].desc;
-	if (!usb_endpoint_is_int_in(endpoint))
+	if (!usb_endpoint_is_int_in(endpoint)){
+		printk(KERN_INFO "Yo chief, we got a different problem\n");
 		return -ENODEV;
+	}
+
+	printk(KERN_INFO "No problems here, bucko\n");
+	printk(KERN_INFO "Haha, fuckin sucker\n");
+
+	//-------------------------------------------------------------------------
 
 	pipe = usb_rcvintpipe(dev, endpoint->bEndpointAddress);
 	maxp = usb_maxpacket(dev, pipe, usb_pipeout(pipe));
@@ -101,6 +120,8 @@ static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device
 
 	drawpad->usbdev = dev;
 	drawpad->dev = input_dev;
+
+	printk(KERN_INFO "We gettin there\n");
 
 	if (dev->manufacturer)
 		strlcpy(drawpad->name, dev->manufacturer, sizeof(drawpad->name));
@@ -125,13 +146,26 @@ static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device
 	usb_to_input_id(dev, &input_dev->id);
 	input_dev->dev.parent = &intf->dev;
 
+	/*
+
 	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_REL);
-	input_dev->keybit[BIT_WORD(BTN_drawpad)] = BIT_MASK(BTN_LEFT) |
+	input_dev->keybit[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_LEFT) |
 		BIT_MASK(BTN_RIGHT) | BIT_MASK(BTN_MIDDLE);
 	input_dev->relbit[0] = BIT_MASK(REL_X) | BIT_MASK(REL_Y);
-	input_dev->keybit[BIT_WORD(BTN_drawpad)] |= BIT_MASK(BTN_SIDE) |
+	input_dev->keybit[BIT_WORD(BTN_MOUSE)] |= BIT_MASK(BTN_SIDE) |
 		BIT_MASK(BTN_EXTRA);
 	input_dev->relbit[0] |= BIT_MASK(REL_WHEEL);
+
+	*/
+	struct input_absinfo *absinfo = kzalloc(sizeof(struct input_absinfo), GFP_KERNEL);
+	input_dev->absinfo = absinfo;
+
+	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
+	//There is an abs_pressure
+	input_dev->absbit[0] = BIT_MASK(ABS_X) | BIT_MASK(ABS_Y);
+	//input_dev->keybit[0] = BIT_MASK()
+
+
 
 	input_set_drvdata(input_dev, drawpad);
 
@@ -144,12 +178,16 @@ static int usb_drawpad_probe(struct usb_interface *intf, const struct usb_device
 	drawpad->irq->transfer_dma = drawpad->data_dma;
 	drawpad->irq->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
+
 	error = input_register_device(drawpad->dev);
 	if (error)
 		goto fail3;
 
 	usb_set_intfdata(intf, drawpad);
+
+	printk(KERN_INFO "We got to the end hype hype\n");
 	return 0;
+
 
 fail3:	
 	usb_free_urb(drawpad->irq);
@@ -158,8 +196,13 @@ fail2:
 fail1:	
 	input_free_device(input_dev);
 	kfree(drawpad);
+
+	printk(KERN_INFO "Bra we failed lol\n");
+
 	return error;
-    */
+    
+
+	/*
 	struct usb_host_interface *iface_desc;
     struct usb_endpoint_descriptor *endpoint;
     int i;
@@ -183,7 +226,22 @@ fail1:
         printk(KERN_INFO "ED[%d]->wMaxPacketSize: 0x%04X (%d)\n",
                 i, endpoint->wMaxPacketSize, endpoint->wMaxPacketSize);
     }
- 
+	*/
+	/*
+	int short_irq = 0;
+	if (short_irq >= 0) {
+		result = request_irq(short_irq, short_interrupt, SA_INTERRUPT, "short", NULL);
+		if (result) {
+			printk(KERN_INFO "short: can't get assigned irq %i\n",
+			short_irq);
+			short_irq = -1;
+		}
+		else { // actually enable it -- assume this *is* a parallel port 
+			outb(0x10,short_base+2);
+		}
+	}
+	//*/
+
     //device = interface_to_usbdev(intf);
     return 0;
 }
